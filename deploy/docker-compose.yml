@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - target: 5432
+        published: "${POSTGRES_PORT}"
+        host_ip: 0.0.0.0
+        protocol: tcp
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - target: 6379
+        published: "${REDIS_PORT}"
+        host_ip: 0.0.0.0
+        protocol: tcp
+    volumes:
+      - redis_data:/data
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - target: 8000
+        published: "${CHROMA_PORT}"
+        host_ip: 0.0.0.0
+        protocol: tcp
+    volumes:
+      - chroma_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
