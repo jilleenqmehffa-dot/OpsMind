@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.models.document_index_job import DocumentIndexJob
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
@@ -13,6 +14,7 @@ from app.models.wiki_version import WikiVersion
 
 __all__ = [
     "AuditLog",
+    "DocumentIndexJob",
     "Permission",
     "Role",
     "RolePermission",
