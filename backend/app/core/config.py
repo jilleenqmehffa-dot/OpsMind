@@ -19,3 +19,7 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 _upload_storage_dir = Path(os.getenv("UPLOAD_STORAGE_DIR", "backend/storage/uploads"))
 UPLOAD_STORAGE_DIR = _upload_storage_dir if _upload_storage_dir.is_absolute() else PROJECT_ROOT / _upload_storage_dir
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
+
+CHROMA_HOST = os.getenv("CHROMA_HOST", "127.0.0.1")
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8001"))
+CHROMA_DOCUMENT_COLLECTION = os.getenv("CHROMA_DOCUMENT_COLLECTION", "opsmind_documents")
