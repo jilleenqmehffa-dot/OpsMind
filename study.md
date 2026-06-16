@@ -559,3 +559,51 @@ M3 索引任务中，`backend/app/schemas/document_index.py` 后续由 AI 助手
 ### 下一步
 
 用户继续完成核心后端部分：`backend/app/api/routes/wiki_index.py` 和 `backend/app/services/document_index.py` 的路由入口与状态流转思路。AI 后续再补模型、迁移、注册、运行和接口验证。
+
+## 2026-06-16：纠正 LLM Wiki 项目方向
+
+### 当前目标
+
+根据桌面文件 `llmwiki修正.md` 纠正项目方向：OpsMind 不再按传统 RAG 路线推进，而是统一为 LLM Wiki / Knowledge Compilation 知识编译路线。
+
+### 涉及文件
+
+- `README.md`：重写项目定位、核心能力和计划架构。
+- `docs/project-design.md`：重写项目目标、功能范围、技术架构、核心流程和路线图。
+- `docs/module-plan.md`：将 M3 之后的模块从“文档解析、索引、检索、RAG 问答”调整为“知识编译、页面关系、Wiki 搜索、基于 Wiki 的问答”。
+- `docs/m3-knowledge-compilation-design.md`：替换旧的 M3 索引设计，明确资料解析、知识单元提取、Wiki 页面生成、页面关系和知识修订流程。
+- `AGENTS.md`：把协作边界中的 Agent/RAG 核心实现调整为 LLM Wiki 知识编译核心实现。
+
+### 关键纠正
+
+旧方向：
+
+```text
+文档 -> Chunk -> Embedding -> ChromaDB -> Top-K 检索 -> LLM 回答
+```
+
+新方向：
+
+```text
+原始资料 -> LLM 理解 -> 知识提炼 -> Wiki 页面生成/更新 -> 页面关系 -> 知识修订
+```
+
+查询时优先：
+
+```text
+用户问题 -> 定位相关 Wiki 页面 -> 基于 Wiki 页面和页面关系回答
+```
+
+而不是：
+
+```text
+用户问题 -> 检索原始 chunk -> 拼接上下文 -> LLM 回答
+```
+
+### 后续原则
+
+- Wiki 是经过 LLM 整理后的知识层，不是原始文档切片集合。
+- 搜索能力服务于 Wiki 页面定位，不再把原始 chunk 检索作为项目主体。
+- ChromaDB、Embedding 和语义搜索可以作为 Wiki 页面搜索的辅助能力，但不再是 M3 主线。
+- 后续命名优先使用 `knowledge_compilation`、`knowledge_unit`、`wiki_page_relationship`、`knowledge_revision` 等概念。
+- 旧的 `document_index`、`wiki_index`、`chunk` 等命名如果已经出现在代码或 schema 中，后续应按实际改造节奏逐步迁移，避免继续扩散。
