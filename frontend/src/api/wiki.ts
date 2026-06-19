@@ -71,6 +71,34 @@ export interface WikiPageRelationship {
   updated_at: string;
 }
 
+export interface WikiSearchRelationship {
+  id: number;
+  source_page_id: number;
+  target_page_id: number;
+  relation_type: string;
+  related_page_id: number;
+  related_page_title: string;
+}
+
+export interface WikiSearchResult {
+  id: number;
+  title: string;
+  slug: string;
+  status: string;
+  summary: string;
+  category_id: number | null;
+  updated_at: string;
+  relationships: WikiSearchRelationship[];
+}
+
+export interface WikiSearchParams {
+  q: string;
+  status?: string;
+  category_id?: number;
+  tag_id?: number;
+  limit?: number;
+}
+
 export interface KnowledgeCompilationJob {
   id: number;
   page_id: number | null;
@@ -210,6 +238,14 @@ export async function listPageRelationships(
   const response = await axios.get<WikiPageRelationship[]>(`/api/v1/wiki/pages/${pageId}/relationships`, {
     headers: authHeaders(token),
     params: { direction },
+  });
+  return response.data;
+}
+
+export async function searchWikiPages(token: string, params: WikiSearchParams): Promise<WikiSearchResult[]> {
+  const response = await axios.get<WikiSearchResult[]>("/api/v1/wiki/search", {
+    headers: authHeaders(token),
+    params,
   });
   return response.data;
 }

@@ -571,6 +571,96 @@ code {
   line-height: 1.5;
 }
 
+.search-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.search-panel {
+  border: 1px solid #dfe9eb;
+  border-radius: 8px;
+}
+
+.search-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(120px, 0.35fr) minmax(150px, 0.45fr) minmax(150px, 0.45fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-results {
+  display: grid;
+  gap: 10px;
+  min-height: 160px;
+}
+
+.search-result {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+  padding: 14px;
+  color: #36535b;
+  text-align: left;
+  border: 1px solid #dfe9eb;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.search-result:hover {
+  border-color: #69b8b4;
+  background: #f8fbfc;
+}
+
+.search-result-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-result-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-result-title strong,
+.search-result-main p {
+  overflow-wrap: anywhere;
+}
+
+.search-result-title strong {
+  color: #183943;
+}
+
+.search-result-main p {
+  margin: 0;
+  color: #60757d;
+  line-height: 1.6;
+}
+
+.search-result-main span {
+  color: #789098;
+  font-size: 12px;
+}
+
+.search-relationships {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.search-relationships .el-tag {
+  cursor: pointer;
+}
+
+.search-empty {
+  align-self: center;
+  justify-self: center;
+  padding: 40px 0;
+}
+
 @media (max-width: 820px) {
   .sidebar {
     width: 72px !important;
@@ -610,7 +700,8 @@ code {
   .auth-layout,
   .dashboard-grid,
   .wiki-workspace,
-  .wiki-side-panels {
+  .wiki-side-panels,
+  .search-form {
     grid-template-columns: 1fr;
   }
 

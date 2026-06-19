@@ -35,6 +35,7 @@ import {
   listVersions,
   readAttachmentCompilation,
   readPage,
+  searchWikiPages,
   updatePageRelationship,
   updatePage,
   type KnowledgeCompilationJob,
@@ -44,6 +45,7 @@ import {
   type WikiPage,
   type WikiPageListItem,
   type WikiPageRelationship,
+  type WikiSearchResult,
   type WikiTag,
   type WikiVersion,
 } from "./api/wiki";
@@ -77,6 +79,8 @@ const knowledgeUnits = ref<KnowledgeUnit[]>([]);
 const compilingAttachmentId = ref<number | null>(null);
 const compilationLoading = ref(false);
 const relationshipSaving = ref(false);
+const searchLoading = ref(false);
+const searchResults = ref<WikiSearchResult[]>([]);
 
 const loginForm = reactive({
   username: "admin",
@@ -115,6 +119,13 @@ const relationshipForm = reactive({
   target_page_id: null as number | null,
   relation_type: "related_to",
   description: "",
+});
+
+const searchForm = reactive({
+  q: "",
+  status: "",
+  category_id: null as number | null,
+  tag_id: null as number | null,
 });
 
 const relationTypeOptions = [
@@ -324,6 +335,20 @@ async function loadWikiData() {
     ElMessage.error("加载 Wiki 数据失败");
   } finally {
     wikiLoading.value = false;
+  }
+}
+
+async function loadSearchFilters() {
+  if (!accessToken.value) return;
+  try {
+    const [categoryData, tagData] = await Promise.all([
+      listCategories(accessToken.value),
+      listTags(accessToken.value),
+    ]);
+    categories.value = categoryData;
+    tags.value = tagData;
+  } catch {
+    ElMessage.error("加载搜索筛选项失败");
   }
 }
 
@@ -546,6 +571,42 @@ async function runAttachmentCompilation(attachment: WikiAttachment) {
   }
 }
 
+async function runSearch() {
+  if (!accessToken.value) return;
+  const keyword = searchForm.q.trim();
+  if (!keyword) {
+    ElMessage.warning("请输入搜索关键词");
+    return;
+  }
+
+  searchLoading.value = true;
+  try {
+    searchResults.value = await searchWikiPages(accessToken.value, {
+      q: keyword,
+      status: searchForm.status || undefined,
+      category_id: searchForm.category_id ?? undefined,
+      tag_id: searchForm.tag_id ?? undefined,
+      limit: 30,
+    });
+  } catch {
+    ElMessage.error("搜索失败，请稍后重试");
+  } finally {
+    searchLoading.value = false;
+  }
+}
+
+function resetSearchFilters() {
+  searchForm.status = "";
+  searchForm.category_id = null;
+  searchForm.tag_id = null;
+}
+
+async function openSearchResult(pageId: number) {
+  activeView.value = "wiki";
+  await loadWikiData();
+  await selectPage(pageId);
+}
+
 async function selectView(view: ViewKey) {
   if (!currentUser.value) {
     activeView.value = "overview";
@@ -556,6 +617,8 @@ async function selectView(view: ViewKey) {
   activeView.value = view;
   if (view === "wiki") {
     await loadWikiData();
+  } else if (view === "search") {
+    await loadSearchFilters();
   }
 }
 
@@ -939,10 +1002,75 @@ onMounted(() => {
             </section>
           </section>
 
-          <section v-else class="placeholder-panel">
-            <el-icon><Lock /></el-icon>
-            <h3>智能检索页面待接入</h3>
-            <p>Wiki 内容稳定后，再进入索引和检索模块。</p>
+          <section v-else class="search-workspace">
+            <el-card class="search-panel" shadow="never">
+              <template #header>
+                <div class="card-header">
+                  <div class="card-title">
+                    <el-icon><Search /></el-icon>
+                    <span>Wiki 搜索</span>
+                  </div>
+                  <el-button text @click="resetSearchFilters">重置筛选</el-button>
+                </div>
+              </template>
+
+              <div class="search-form">
+                <el-input
+                  v-model="searchForm.q"
+                  clearable
+                  placeholder="输入关键词"
+                  @keyup.enter="runSearch"
+                />
+                <el-select v-model="searchForm.status" clearable placeholder="状态">
+                  <el-option label="草稿" value="draft" />
+                  <el-option label="已发布" value="published" />
+                  <el-option label="已归档" value="archived" />
+                </el-select>
+                <el-select v-model="searchForm.category_id" clearable filterable placeholder="分类">
+                  <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
+                </el-select>
+                <el-select v-model="searchForm.tag_id" clearable filterable placeholder="标签">
+                  <el-option v-for="tag in tags" :key="tag.id" :label="tag.name" :value="tag.id" />
+                </el-select>
+                <el-button :loading="searchLoading" type="primary" @click="runSearch">搜索</el-button>
+              </div>
+            </el-card>
+
+            <div v-loading="searchLoading" class="search-results">
+              <button
+                v-for="result in searchResults"
+                :key="result.id"
+                class="search-result"
+                type="button"
+                @click="openSearchResult(result.id)"
+              >
+                <div class="search-result-main">
+                  <div class="search-result-title">
+                    <strong>{{ result.title }}</strong>
+                    <el-tag size="small" effect="plain">{{ statusText(result.status) }}</el-tag>
+                  </div>
+                  <p>{{ result.summary }}</p>
+                  <span>{{ result.slug }} · {{ formatTime(result.updated_at) }}</span>
+                </div>
+
+                <div v-if="result.relationships.length" class="search-relationships">
+                  <el-tag
+                    v-for="relationship in result.relationships"
+                    :key="relationship.id"
+                    size="small"
+                    type="info"
+                    effect="plain"
+                    @click.stop="openSearchResult(relationship.related_page_id)"
+                  >
+                    {{ relationTypeText(relationship.relation_type) }}：{{ relationship.related_page_title }}
+                  </el-tag>
+                </div>
+              </button>
+
+              <p v-if="!searchLoading && searchResults.length === 0" class="empty-text search-empty">
+                暂无搜索结果
+              </p>
+            </div>
           </section>
         </template>
       </el-main>
