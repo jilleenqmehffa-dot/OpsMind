@@ -313,6 +313,11 @@ def list_pages(
 @router.get("/search", response_model=list[WikiSearchResult])
 def search_pages(
     q: str = Query(min_length=1, max_length=100),
+    status_filter: str | None = Query(default=None, alias="status", pattern="^(draft|published|archived)$"),
+    category_id: int | None = Query(default=None, ge=1),
+    tag_id: int | None = Query(default=None, ge=1),
+    updated_from: datetime | None = None,
+    updated_to: datetime | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("wiki:read")),
@@ -320,16 +325,25 @@ def search_pages(
     keyword = q.strip()
     if not keyword:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Search keyword cannot be empty")
+    if updated_from is not None and updated_to is not None and updated_from > updated_to:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="updated_from cannot be later than updated_to")
 
     like = f"%{keyword}%"
     title_match = WikiPage.title.ilike(like)
     content_match = WikiPage.content.ilike(like)
-    pages = db.scalars(
-        select(WikiPage)
-        .where(WikiPage.deleted_at.is_(None), or_(title_match, content_match))
-        .order_by(desc(title_match), desc(WikiPage.updated_at))
-        .limit(limit)
-    ).all()
+    query = select(WikiPage).where(WikiPage.deleted_at.is_(None), or_(title_match, content_match))
+    if status_filter is not None:
+        query = query.where(WikiPage.status == status_filter)
+    if category_id is not None:
+        query = query.where(WikiPage.category_id == category_id)
+    if tag_id is not None:
+        query = query.where(WikiPage.id.in_(select(WikiPageTag.page_id).where(WikiPageTag.tag_id == tag_id)))
+    if updated_from is not None:
+        query = query.where(WikiPage.updated_at >= updated_from)
+    if updated_to is not None:
+        query = query.where(WikiPage.updated_at <= updated_to)
+
+    pages = db.scalars(query.order_by(desc(title_match), desc(WikiPage.updated_at)).limit(limit)).all()
     return [search_result(page, keyword) for page in pages]
 
 
