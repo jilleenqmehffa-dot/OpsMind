@@ -58,6 +58,55 @@ export interface WikiAttachment {
   created_at: string;
 }
 
+export interface WikiPageRelationship {
+  id: number;
+  source_page_id: number;
+  target_page_id: number;
+  relation_type: string;
+  description: string | null;
+  source_type: string;
+  source_job_id: number | null;
+  created_by_user_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeCompilationJob {
+  id: number;
+  page_id: number | null;
+  attachment_id: number;
+  status: string;
+  knowledge_unit_count: number;
+  created_page_count: number;
+  updated_page_count: number;
+  relationship_count: number;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeUnit {
+  id: number;
+  job_id: number;
+  source_attachment_id: number;
+  source_page_id: number | null;
+  title: string;
+  unit_type: string;
+  summary: string;
+  content: string;
+  source_location: string;
+  confidence: number;
+  merge_hint_page_id: number | null;
+  merge_hint_title: string | null;
+  apply_status: string;
+  review_note: string | null;
+  created_page_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WikiPagePayload {
   title: string;
   slug: string;
@@ -72,6 +121,12 @@ export interface AttachmentPayload {
   content_type: string;
   size_bytes: number;
   storage_path: string;
+}
+
+export interface WikiPageRelationshipPayload {
+  target_page_id: number;
+  relation_type: string;
+  description: string | null;
 }
 
 export async function listCategories(token: string): Promise<WikiCategory[]> {
@@ -147,6 +202,46 @@ export async function listVersions(token: string, pageId: number): Promise<WikiV
   return response.data;
 }
 
+export async function listPageRelationships(
+  token: string,
+  pageId: number,
+  direction = "both",
+): Promise<WikiPageRelationship[]> {
+  const response = await axios.get<WikiPageRelationship[]>(`/api/v1/wiki/pages/${pageId}/relationships`, {
+    headers: authHeaders(token),
+    params: { direction },
+  });
+  return response.data;
+}
+
+export async function createPageRelationship(
+  token: string,
+  pageId: number,
+  payload: WikiPageRelationshipPayload,
+): Promise<WikiPageRelationship> {
+  const response = await axios.post<WikiPageRelationship>(`/api/v1/wiki/pages/${pageId}/relationships`, payload, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function updatePageRelationship(
+  token: string,
+  relationshipId: number,
+  payload: WikiPageRelationshipPayload,
+): Promise<WikiPageRelationship> {
+  const response = await axios.put<WikiPageRelationship>(`/api/v1/wiki/relationships/${relationshipId}`, payload, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function deletePageRelationship(token: string, relationshipId: number): Promise<void> {
+  await axios.delete(`/api/v1/wiki/relationships/${relationshipId}`, {
+    headers: authHeaders(token),
+  });
+}
+
 export async function listAttachments(token: string, pageId: number): Promise<WikiAttachment[]> {
   const response = await axios.get<WikiAttachment[]>(`/api/v1/wiki/pages/${pageId}/attachments`, {
     headers: authHeaders(token),
@@ -161,6 +256,33 @@ export async function createAttachment(
 ): Promise<WikiAttachment> {
   const response = await axios.post<WikiAttachment>(`/api/v1/wiki/pages/${pageId}/attachments`, payload, {
     headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function compileAttachment(token: string, attachmentId: number): Promise<KnowledgeCompilationJob> {
+  const response = await axios.post<KnowledgeCompilationJob>(
+    `/api/v1/wiki/attachments/${attachmentId}/compile`,
+    {},
+    { headers: authHeaders(token) },
+  );
+  return response.data;
+}
+
+export async function readAttachmentCompilation(
+  token: string,
+  attachmentId: number,
+): Promise<KnowledgeCompilationJob> {
+  const response = await axios.get<KnowledgeCompilationJob>(`/api/v1/wiki/attachments/${attachmentId}/compile`, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function listKnowledgeUnits(token: string, attachmentId: number): Promise<KnowledgeUnit[]> {
+  const response = await axios.get<KnowledgeUnit[]>("/api/v1/wiki/knowledge-units", {
+    headers: authHeaders(token),
+    params: { attachment_id: attachmentId },
   });
   return response.data;
 }

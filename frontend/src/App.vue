@@ -18,22 +18,32 @@ import {
 import { getCurrentUser, login, type CurrentUser } from "./api/auth";
 import { getHealth } from "./api/health";
 import {
+  compileAttachment,
   createAttachment,
   createCategory,
   createPage,
+  createPageRelationship,
   createTag,
   deletePage,
+  deletePageRelationship,
   listAttachments,
   listCategories,
+  listKnowledgeUnits,
+  listPageRelationships,
   listPages,
   listTags,
   listVersions,
+  readAttachmentCompilation,
   readPage,
+  updatePageRelationship,
   updatePage,
+  type KnowledgeCompilationJob,
+  type KnowledgeUnit,
   type WikiAttachment,
   type WikiCategory,
   type WikiPage,
   type WikiPageListItem,
+  type WikiPageRelationship,
   type WikiTag,
   type WikiVersion,
 } from "./api/wiki";
@@ -60,6 +70,13 @@ const categories = ref<WikiCategory[]>([]);
 const tags = ref<WikiTag[]>([]);
 const versions = ref<WikiVersion[]>([]);
 const attachments = ref<WikiAttachment[]>([]);
+const relationships = ref<WikiPageRelationship[]>([]);
+const selectedAttachmentId = ref<number | null>(null);
+const compilationJob = ref<KnowledgeCompilationJob | null>(null);
+const knowledgeUnits = ref<KnowledgeUnit[]>([]);
+const compilingAttachmentId = ref<number | null>(null);
+const compilationLoading = ref(false);
+const relationshipSaving = ref(false);
 
 const loginForm = reactive({
   username: "admin",
@@ -92,6 +109,23 @@ const attachmentForm = reactive({
   size_bytes: 1,
   storage_path: "",
 });
+
+const relationshipForm = reactive({
+  id: 0,
+  target_page_id: null as number | null,
+  relation_type: "related_to",
+  description: "",
+});
+
+const relationTypeOptions = [
+  { label: "引用", value: "references" },
+  { label: "依赖", value: "depends_on" },
+  { label: "归属", value: "belongs_to" },
+  { label: "相关", value: "related_to" },
+  { label: "相似", value: "similar_to" },
+  { label: "原因", value: "caused_by" },
+  { label: "解决", value: "resolved_by" },
+];
 
 const healthLabel = computed(() => {
   const labels: Record<HealthState, string> = {
@@ -130,6 +164,40 @@ function statusText(status: string) {
   return labels[status] ?? status;
 }
 
+function compilationStatusText(status: string) {
+  const labels: Record<string, string> = {
+    pending: "等待中",
+    parsing: "解析中",
+    extracting: "提取中",
+    compiling: "编译中",
+    ready: "已完成",
+    failed: "失败",
+  };
+  return labels[status] ?? status;
+}
+
+function unitTypeText(unitType: string) {
+  const labels: Record<string, string> = {
+    concept: "概念",
+    system: "系统",
+    process: "流程",
+    rule: "规则",
+    term: "术语",
+    event: "事件",
+    incident: "故障",
+  };
+  return labels[unitType] ?? unitType;
+}
+
+function relationTypeText(relationType: string) {
+  return relationTypeOptions.find((option) => option.value === relationType)?.label ?? relationType;
+}
+
+function pageTitle(pageId: number) {
+  if (selectedPage.value?.id === pageId) return selectedPage.value.title;
+  return pages.value.find((page) => page.id === pageId)?.title ?? `#${pageId}`;
+}
+
 function formatTime(value: string | null) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -148,6 +216,19 @@ function resetPageForm() {
   pageForm.status = "draft";
   pageForm.category_id = null;
   pageForm.tag_ids = [];
+}
+
+function resetCompilationPanel() {
+  selectedAttachmentId.value = null;
+  compilationJob.value = null;
+  knowledgeUnits.value = [];
+}
+
+function resetRelationshipForm() {
+  relationshipForm.id = 0;
+  relationshipForm.target_page_id = null;
+  relationshipForm.relation_type = "related_to";
+  relationshipForm.description = "";
 }
 
 async function checkHealth() {
@@ -219,7 +300,9 @@ function logout() {
   activeView.value = "overview";
   pages.value = [];
   selectedPage.value = null;
+  relationships.value = [];
   resetPageForm();
+  resetRelationshipForm();
 }
 
 async function loadWikiData() {
@@ -256,8 +339,13 @@ async function selectPage(pageId: number) {
     pageForm.status = selectedPage.value.status;
     pageForm.category_id = selectedPage.value.category_id;
     pageForm.tag_ids = [...selectedPage.value.tag_ids];
-    versions.value = await listVersions(accessToken.value, pageId);
-    attachments.value = await listAttachments(accessToken.value, pageId);
+    [versions.value, attachments.value, relationships.value] = await Promise.all([
+      listVersions(accessToken.value, pageId),
+      listAttachments(accessToken.value, pageId),
+      listPageRelationships(accessToken.value, pageId),
+    ]);
+    resetRelationshipForm();
+    resetCompilationPanel();
   } catch {
     ElMessage.error("加载 Wiki 页面失败");
   } finally {
@@ -315,6 +403,65 @@ async function removeSelectedPage() {
   }
 }
 
+async function saveRelationship() {
+  if (!accessToken.value || !selectedPage.value || relationshipForm.target_page_id === null) {
+    ElMessage.warning("请选择目标页面");
+    return;
+  }
+  if (relationshipForm.target_page_id === selectedPage.value.id) {
+    ElMessage.warning("页面不能关联自身");
+    return;
+  }
+
+  relationshipSaving.value = true;
+  try {
+    const payload = {
+      target_page_id: relationshipForm.target_page_id,
+      relation_type: relationshipForm.relation_type,
+      description: relationshipForm.description.trim() || null,
+    };
+    if (relationshipForm.id) {
+      await updatePageRelationship(accessToken.value, relationshipForm.id, payload);
+      ElMessage.success("页面关系已更新");
+    } else {
+      await createPageRelationship(accessToken.value, selectedPage.value.id, payload);
+      ElMessage.success("页面关系已创建");
+    }
+    relationships.value = await listPageRelationships(accessToken.value, selectedPage.value.id);
+    resetRelationshipForm();
+  } catch {
+    ElMessage.error("保存页面关系失败，请确认关系没有重复");
+  } finally {
+    relationshipSaving.value = false;
+  }
+}
+
+function editRelationship(relationship: WikiPageRelationship) {
+  relationshipForm.id = relationship.id;
+  relationshipForm.target_page_id = relationship.target_page_id;
+  relationshipForm.relation_type = relationship.relation_type;
+  relationshipForm.description = relationship.description ?? "";
+}
+
+async function removeRelationship(relationship: WikiPageRelationship) {
+  if (!accessToken.value || !selectedPage.value) return;
+  try {
+    await ElMessageBox.confirm("删除后该页面关系将不再展示。", "删除页面关系", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+    await deletePageRelationship(accessToken.value, relationship.id);
+    relationships.value = await listPageRelationships(accessToken.value, selectedPage.value.id);
+    if (relationshipForm.id === relationship.id) resetRelationshipForm();
+    ElMessage.success("页面关系已删除");
+  } catch (error) {
+    if (error !== "cancel") {
+      ElMessage.error("删除页面关系失败");
+    }
+  }
+}
+
 async function addCategory() {
   if (!accessToken.value || !categoryForm.name.trim() || !categoryForm.slug.trim()) return;
   try {
@@ -359,9 +506,43 @@ async function addAttachment() {
     attachmentForm.storage_path = "";
     attachmentForm.size_bytes = 1;
     attachments.value = await listAttachments(accessToken.value, selectedPage.value.id);
+    resetCompilationPanel();
     ElMessage.success("附件元数据已记录");
   } catch {
     ElMessage.error("附件元数据保存失败，请确认类型和大小");
+  }
+}
+
+async function loadAttachmentCompilation(attachmentId: number) {
+  if (!accessToken.value) return;
+  selectedAttachmentId.value = attachmentId;
+  compilationLoading.value = true;
+  try {
+    const [job, units] = await Promise.all([
+      readAttachmentCompilation(accessToken.value, attachmentId).catch(() => null),
+      listKnowledgeUnits(accessToken.value, attachmentId),
+    ]);
+    compilationJob.value = job;
+    knowledgeUnits.value = units;
+  } catch {
+    ElMessage.error("加载知识编译结果失败");
+  } finally {
+    compilationLoading.value = false;
+  }
+}
+
+async function runAttachmentCompilation(attachment: WikiAttachment) {
+  if (!accessToken.value) return;
+  compilingAttachmentId.value = attachment.id;
+  selectedAttachmentId.value = attachment.id;
+  try {
+    compilationJob.value = await compileAttachment(accessToken.value, attachment.id);
+    knowledgeUnits.value = await listKnowledgeUnits(accessToken.value, attachment.id);
+    ElMessage.success("知识编译完成");
+  } catch {
+    ElMessage.error("知识编译失败，请确认附件文件存在且为 UTF-8 文本");
+  } finally {
+    compilingAttachmentId.value = null;
   }
 }
 
@@ -635,6 +816,63 @@ onMounted(() => {
 
                 <el-card shadow="never">
                   <template #header>
+                    <div class="card-header">
+                      <div class="card-title">
+                        <el-icon><Connection /></el-icon>
+                        <span>页面关系</span>
+                      </div>
+                      <el-button v-if="relationshipForm.id" size="small" text @click="resetRelationshipForm">取消编辑</el-button>
+                    </div>
+                  </template>
+
+                  <div class="relationship-form">
+                    <el-select v-model="relationshipForm.target_page_id" filterable placeholder="目标页面" size="small">
+                      <el-option
+                        v-for="page in pages.filter((item) => item.id !== selectedPage?.id)"
+                        :key="page.id"
+                        :label="page.title"
+                        :value="page.id"
+                      />
+                    </el-select>
+                    <el-select v-model="relationshipForm.relation_type" size="small">
+                      <el-option
+                        v-for="option in relationTypeOptions"
+                        :key="option.value"
+                        :label="option.label"
+                        :value="option.value"
+                      />
+                    </el-select>
+                    <el-input v-model="relationshipForm.description" placeholder="关系说明" size="small" />
+                    <el-button :loading="relationshipSaving" size="small" type="primary" plain @click="saveRelationship">
+                      {{ relationshipForm.id ? "更新关系" : "添加关系" }}
+                    </el-button>
+                  </div>
+
+                  <div class="relationship-list">
+                    <div v-for="relationship in relationships" :key="relationship.id" class="relationship-row">
+                      <div>
+                        <strong>
+                          {{ pageTitle(relationship.source_page_id) }}
+                          <span>{{ relationTypeText(relationship.relation_type) }}</span>
+                          {{ pageTitle(relationship.target_page_id) }}
+                        </strong>
+                        <p v-if="relationship.description">{{ relationship.description }}</p>
+                        <p>
+                          {{ relationship.source_type === "manual" ? "人工维护" : "知识编译" }} ·
+                          {{ formatTime(relationship.updated_at) }}
+                        </p>
+                      </div>
+                      <div class="row-actions">
+                        <el-button :icon="Edit" size="small" text @click="editRelationship(relationship)" />
+                        <el-button :icon="Delete" size="small" text type="danger" @click="removeRelationship(relationship)" />
+                      </div>
+                    </div>
+                    <p v-if="relationships.length === 0" class="empty-text">暂无页面关系</p>
+                  </div>
+                </el-card>
+
+                <el-card shadow="never">
+                  <template #header>
                     <div class="card-title">
                       <el-icon><Upload /></el-icon>
                       <span>附件元数据</span>
@@ -654,8 +892,46 @@ onMounted(() => {
                   </div>
                   <div class="compact-list">
                     <div v-for="attachment in attachments" :key="attachment.id" class="compact-row">
-                      <strong>{{ attachment.filename }}</strong>
-                      <span>{{ attachment.size_bytes }} bytes</span>
+                      <div>
+                        <strong>{{ attachment.filename }}</strong>
+                        <span>{{ attachment.size_bytes }} bytes</span>
+                      </div>
+                      <div class="row-actions">
+                        <el-button size="small" text @click="loadAttachmentCompilation(attachment.id)">查看</el-button>
+                        <el-button
+                          :loading="compilingAttachmentId === attachment.id"
+                          size="small"
+                          type="primary"
+                          plain
+                          @click="runAttachmentCompilation(attachment)"
+                        >
+                          知识编译
+                        </el-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="selectedAttachmentId" v-loading="compilationLoading" class="compilation-panel">
+                    <div v-if="compilationJob" class="compilation-status">
+                      <el-tag :type="compilationJob.status === 'failed' ? 'danger' : 'success'" effect="plain">
+                        {{ compilationStatusText(compilationJob.status) }}
+                      </el-tag>
+                      <span>候选知识单元：{{ compilationJob.knowledge_unit_count }}</span>
+                    </div>
+                    <p v-else class="empty-text">该附件暂无知识编译任务</p>
+                    <p v-if="compilationJob?.error_message" class="error-text">{{ compilationJob.error_message }}</p>
+
+                    <div class="knowledge-unit-list">
+                      <div v-for="unit in knowledgeUnits" :key="unit.id" class="knowledge-unit-row">
+                        <div>
+                          <strong>{{ unit.title }}</strong>
+                          <p>{{ unit.summary }}</p>
+                        </div>
+                        <div class="unit-meta">
+                          <el-tag size="small" type="info">{{ unitTypeText(unit.unit_type) }}</el-tag>
+                          <span>{{ Math.round(unit.confidence * 100) }}%</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </el-card>
