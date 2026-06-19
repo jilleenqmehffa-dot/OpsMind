@@ -30,6 +30,7 @@ from app.schemas.wiki import (
     WikiPageListItem,
     WikiPageResponse,
     WikiPageUpdate,
+    WikiSearchRelationship,
     WikiSearchResult,
     WikiVersionResponse,
 )
@@ -170,7 +171,11 @@ def build_search_summary(content: str, keyword: str, max_length: int = 160) -> s
     return f"{prefix}{snippet}{suffix}"
 
 
-def search_result(page: WikiPage, keyword: str) -> WikiSearchResult:
+def search_result(
+    page: WikiPage,
+    keyword: str,
+    relationships: list[WikiSearchRelationship] | None = None,
+) -> WikiSearchResult:
     return WikiSearchResult(
         id=page.id,
         title=page.title,
@@ -179,7 +184,58 @@ def search_result(page: WikiPage, keyword: str) -> WikiSearchResult:
         summary=build_search_summary(page.content, keyword),
         category_id=page.category_id,
         updated_at=page.updated_at,
+        relationships=relationships or [],
     )
+
+
+def load_search_relationships(
+    db: Session,
+    page_ids: list[int],
+    per_page_limit: int = 5,
+) -> dict[int, list[WikiSearchRelationship]]:
+    if not page_ids:
+        return {}
+
+    relationships = db.scalars(
+        select(WikiPageRelationship)
+        .where(or_(WikiPageRelationship.source_page_id.in_(page_ids), WikiPageRelationship.target_page_id.in_(page_ids)))
+        .order_by(desc(WikiPageRelationship.updated_at), desc(WikiPageRelationship.id))
+    ).all()
+    related_page_ids = {
+        relationship.target_page_id if relationship.source_page_id in page_ids else relationship.source_page_id
+        for relationship in relationships
+    }
+    related_pages = {}
+    if related_page_ids:
+        related_pages = {
+            page.id: page.title
+            for page in db.scalars(
+                select(WikiPage).where(WikiPage.id.in_(related_page_ids), WikiPage.deleted_at.is_(None))
+            ).all()
+        }
+
+    result: dict[int, list[WikiSearchRelationship]] = {page_id: [] for page_id in page_ids}
+    page_id_set = set(page_ids)
+    for relationship in relationships:
+        for current_page_id, related_page_id in (
+            (relationship.source_page_id, relationship.target_page_id),
+            (relationship.target_page_id, relationship.source_page_id),
+        ):
+            if current_page_id not in page_id_set or related_page_id not in related_pages:
+                continue
+            if len(result[current_page_id]) >= per_page_limit:
+                continue
+            result[current_page_id].append(
+                WikiSearchRelationship(
+                    id=relationship.id,
+                    source_page_id=relationship.source_page_id,
+                    target_page_id=relationship.target_page_id,
+                    relation_type=relationship.relation_type,
+                    related_page_id=related_page_id,
+                    related_page_title=related_pages[related_page_id],
+                )
+            )
+    return result
 
 
 def validate_attachment_upload(file: UploadFile) -> tuple[str, str]:
@@ -343,8 +399,9 @@ def search_pages(
     if updated_to is not None:
         query = query.where(WikiPage.updated_at <= updated_to)
 
-    pages = db.scalars(query.order_by(desc(title_match), desc(WikiPage.updated_at)).limit(limit)).all()
-    return [search_result(page, keyword) for page in pages]
+    pages = list(db.scalars(query.order_by(desc(title_match), desc(WikiPage.updated_at)).limit(limit)).all())
+    relationship_map = load_search_relationships(db, [page.id for page in pages])
+    return [search_result(page, keyword, relationship_map.get(page.id, [])) for page in pages]
 
 
 @router.get("/pages/{page_id}", response_model=WikiPageResponse)

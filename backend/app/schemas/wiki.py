@@ -69,6 +69,17 @@ class WikiPageResponse(WikiPageListItem):
     tag_ids: list[int]
 
 
+class WikiSearchRelationship(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_page_id: int
+    target_page_id: int
+    relation_type: str
+    related_page_id: int
+    related_page_title: str
+
+
 class WikiSearchResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,6 +90,7 @@ class WikiSearchResult(BaseModel):
     summary: str
     category_id: int | None
     updated_at: datetime
+    relationships: list[WikiSearchRelationship] = Field(default_factory=list)
 
 
 class WikiVersionResponse(BaseModel):
