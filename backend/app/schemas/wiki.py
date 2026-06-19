@@ -81,6 +81,36 @@ class WikiVersionResponse(BaseModel):
     created_at: datetime
 
 
+RELATION_TYPE_PATTERN = "^(references|depends_on|belongs_to|related_to|similar_to|caused_by|resolved_by)$"
+
+
+class WikiPageRelationshipCreate(BaseModel):
+    target_page_id: int
+    relation_type: str = Field(pattern=RELATION_TYPE_PATTERN)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class WikiPageRelationshipUpdate(BaseModel):
+    target_page_id: int | None = None
+    relation_type: str | None = Field(default=None, pattern=RELATION_TYPE_PATTERN)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class WikiPageRelationshipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_page_id: int
+    target_page_id: int
+    relation_type: str
+    description: str | None
+    source_type: str
+    source_job_id: int | None
+    created_by_user_id: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class AttachmentCreate(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=120)

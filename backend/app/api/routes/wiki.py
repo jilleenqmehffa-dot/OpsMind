@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.wiki_attachment import WikiAttachment
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_page import WikiPage
+from app.models.wiki_page_relationship import WikiPageRelationship
 from app.models.wiki_page_tag import WikiPageTag
 from app.models.wiki_tag import WikiTag
 from app.models.wiki_version import WikiVersion
@@ -22,6 +23,9 @@ from app.schemas.wiki import (
     CategoryResponse,
     TagCreate,
     TagResponse,
+    WikiPageRelationshipCreate,
+    WikiPageRelationshipResponse,
+    WikiPageRelationshipUpdate,
     WikiPageCreate,
     WikiPageListItem,
     WikiPageResponse,
@@ -60,6 +64,13 @@ def get_page_or_404(db: Session, page_id: int, include_deleted: bool = False) ->
     return page
 
 
+def get_relationship_or_404(db: Session, relationship_id: int) -> WikiPageRelationship:
+    relationship = db.scalar(select(WikiPageRelationship).where(WikiPageRelationship.id == relationship_id))
+    if relationship is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wiki page relationship not found")
+    return relationship
+
+
 def validate_category(db: Session, category_id: int | None) -> None:
     if category_id is None:
         return
@@ -75,6 +86,31 @@ def load_tags(db: Session, tag_ids: list[int]) -> list[WikiTag]:
     if len(tags) != len(unique_ids):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more tags were not found")
     return list(tags)
+
+
+def validate_relationship_pages(db: Session, source_page_id: int, target_page_id: int) -> None:
+    if source_page_id == target_page_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A page cannot relate to itself")
+    get_page_or_404(db, source_page_id)
+    get_page_or_404(db, target_page_id)
+
+
+def ensure_unique_relationship(
+    db: Session,
+    source_page_id: int,
+    target_page_id: int,
+    relation_type: str,
+    exclude_id: int | None = None,
+) -> None:
+    query = select(WikiPageRelationship).where(
+        WikiPageRelationship.source_page_id == source_page_id,
+        WikiPageRelationship.target_page_id == target_page_id,
+        WikiPageRelationship.relation_type == relation_type,
+    )
+    if exclude_id is not None:
+        query = query.where(WikiPageRelationship.id != exclude_id)
+    if db.scalar(query) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Wiki page relationship already exists")
 
 
 def replace_page_tags(db: Session, page: WikiPage, tag_ids: list[int]) -> None:
@@ -307,6 +343,130 @@ def list_versions(
 ) -> list[WikiVersion]:
     get_page_or_404(db, page_id)
     return list(db.scalars(select(WikiVersion).where(WikiVersion.page_id == page_id).order_by(desc(WikiVersion.version_number))).all())
+
+
+@router.post("/pages/{page_id}/relationships", response_model=WikiPageRelationshipResponse)
+def create_page_relationship(
+    page_id: int,
+    payload: WikiPageRelationshipCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("wiki:update")),
+) -> WikiPageRelationship:
+    validate_relationship_pages(db, page_id, payload.target_page_id)
+    ensure_unique_relationship(db, page_id, payload.target_page_id, payload.relation_type)
+
+    relationship = WikiPageRelationship(
+        source_page_id=page_id,
+        target_page_id=payload.target_page_id,
+        relation_type=payload.relation_type,
+        description=payload.description,
+        source_type="manual",
+        created_by_user_id=current_user.id,
+    )
+    db.add(relationship)
+    db.flush()
+    record_audit_log(
+        db,
+        action="wiki.relationship.create",
+        actor=current_user,
+        request=request,
+        resource_type="wiki_page_relationship",
+        resource_id=str(relationship.id),
+        detail={
+            "source_page_id": relationship.source_page_id,
+            "target_page_id": relationship.target_page_id,
+            "relation_type": relationship.relation_type,
+        },
+    )
+    db.commit()
+    db.refresh(relationship)
+    return relationship
+
+
+@router.get("/pages/{page_id}/relationships", response_model=list[WikiPageRelationshipResponse])
+def list_page_relationships(
+    page_id: int,
+    direction: str = Query(default="outgoing", pattern="^(outgoing|incoming|both)$"),
+    relation_type: str | None = Query(default=None, pattern="^(references|depends_on|belongs_to|related_to|similar_to|caused_by|resolved_by)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("wiki:read")),
+) -> list[WikiPageRelationship]:
+    get_page_or_404(db, page_id)
+    query = select(WikiPageRelationship)
+    if direction == "outgoing":
+        query = query.where(WikiPageRelationship.source_page_id == page_id)
+    elif direction == "incoming":
+        query = query.where(WikiPageRelationship.target_page_id == page_id)
+    else:
+        query = query.where(or_(WikiPageRelationship.source_page_id == page_id, WikiPageRelationship.target_page_id == page_id))
+    if relation_type is not None:
+        query = query.where(WikiPageRelationship.relation_type == relation_type)
+    return list(db.scalars(query.order_by(desc(WikiPageRelationship.updated_at), desc(WikiPageRelationship.id))).all())
+
+
+@router.put("/relationships/{relationship_id}", response_model=WikiPageRelationshipResponse)
+def update_page_relationship(
+    relationship_id: int,
+    payload: WikiPageRelationshipUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("wiki:update")),
+) -> WikiPageRelationship:
+    relationship = get_relationship_or_404(db, relationship_id)
+    target_page_id = payload.target_page_id if payload.target_page_id is not None else relationship.target_page_id
+    relation_type = payload.relation_type if payload.relation_type is not None else relationship.relation_type
+
+    validate_relationship_pages(db, relationship.source_page_id, target_page_id)
+    ensure_unique_relationship(db, relationship.source_page_id, target_page_id, relation_type, exclude_id=relationship.id)
+
+    relationship.target_page_id = target_page_id
+    relationship.relation_type = relation_type
+    if "description" in payload.model_fields_set:
+        relationship.description = payload.description
+
+    record_audit_log(
+        db,
+        action="wiki.relationship.update",
+        actor=current_user,
+        request=request,
+        resource_type="wiki_page_relationship",
+        resource_id=str(relationship.id),
+        detail={
+            "source_page_id": relationship.source_page_id,
+            "target_page_id": relationship.target_page_id,
+            "relation_type": relationship.relation_type,
+        },
+    )
+    db.commit()
+    db.refresh(relationship)
+    return relationship
+
+
+@router.delete("/relationships/{relationship_id}")
+def delete_page_relationship(
+    relationship_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("wiki:update")),
+) -> dict[str, str]:
+    relationship = get_relationship_or_404(db, relationship_id)
+    record_audit_log(
+        db,
+        action="wiki.relationship.delete",
+        actor=current_user,
+        request=request,
+        resource_type="wiki_page_relationship",
+        resource_id=str(relationship.id),
+        detail={
+            "source_page_id": relationship.source_page_id,
+            "target_page_id": relationship.target_page_id,
+            "relation_type": relationship.relation_type,
+        },
+    )
+    db.delete(relationship)
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.post("/pages/{page_id}/attachments", response_model=AttachmentResponse)
