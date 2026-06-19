@@ -69,6 +69,18 @@ class WikiPageResponse(WikiPageListItem):
     tag_ids: list[int]
 
 
+class WikiSearchResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    slug: str
+    status: str
+    summary: str
+    category_id: int | None
+    updated_at: datetime
+
+
 class WikiVersionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

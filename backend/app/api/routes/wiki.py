@@ -30,6 +30,7 @@ from app.schemas.wiki import (
     WikiPageListItem,
     WikiPageResponse,
     WikiPageUpdate,
+    WikiSearchResult,
     WikiVersionResponse,
 )
 from app.services.audit import record_audit_log
@@ -149,6 +150,35 @@ def page_response(page: WikiPage) -> WikiPageResponse:
         created_at=page.created_at,
         updated_at=page.updated_at,
         tag_ids=[item.tag_id for item in page.tags],
+    )
+
+
+def build_search_summary(content: str, keyword: str, max_length: int = 160) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= max_length:
+        return compact
+
+    keyword_index = compact.lower().find(keyword.lower())
+    if keyword_index < 0:
+        return f"{compact[: max_length - 3]}..."
+
+    start = max(keyword_index - 50, 0)
+    end = min(start + max_length, len(compact))
+    snippet = compact[start:end]
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(compact) else ""
+    return f"{prefix}{snippet}{suffix}"
+
+
+def search_result(page: WikiPage, keyword: str) -> WikiSearchResult:
+    return WikiSearchResult(
+        id=page.id,
+        title=page.title,
+        slug=page.slug,
+        status=page.status,
+        summary=build_search_summary(page.content, keyword),
+        category_id=page.category_id,
+        updated_at=page.updated_at,
     )
 
 
@@ -278,6 +308,29 @@ def list_pages(
         like = f"%{q}%"
         query = query.where(or_(WikiPage.title.ilike(like), WikiPage.content.ilike(like)))
     return list(db.scalars(query.order_by(desc(WikiPage.updated_at))).all())
+
+
+@router.get("/search", response_model=list[WikiSearchResult])
+def search_pages(
+    q: str = Query(min_length=1, max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("wiki:read")),
+) -> list[WikiSearchResult]:
+    keyword = q.strip()
+    if not keyword:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Search keyword cannot be empty")
+
+    like = f"%{keyword}%"
+    title_match = WikiPage.title.ilike(like)
+    content_match = WikiPage.content.ilike(like)
+    pages = db.scalars(
+        select(WikiPage)
+        .where(WikiPage.deleted_at.is_(None), or_(title_match, content_match))
+        .order_by(desc(title_match), desc(WikiPage.updated_at))
+        .limit(limit)
+    ).all()
+    return [search_result(page, keyword) for page in pages]
 
 
 @router.get("/pages/{page_id}", response_model=WikiPageResponse)
