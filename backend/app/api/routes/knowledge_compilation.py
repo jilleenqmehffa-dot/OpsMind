@@ -10,6 +10,7 @@ from app.models.knowledge_unit import KnowledgeUnit
 from app.models.user import User
 from app.models.wiki_attachment import WikiAttachment
 from app.models.wiki_page import WikiPage
+from app.models.wiki_page_relationship import WikiPageRelationship
 from app.schemas.knowledge_compilation import (
     KnowledgeCompilationJobResponse,
     KnowledgeUnitApplyRequest,
@@ -51,6 +52,48 @@ def get_unit_or_404(db: Session, unit_id: int) -> KnowledgeUnit:
             detail="Knowledge unit not found",
         )
     return unit
+
+
+def get_existing_relationship(
+    db: Session,
+    source_page_id: int,
+    target_page_id: int,
+    relation_type: str,
+) -> WikiPageRelationship | None:
+    return db.scalar(
+        select(WikiPageRelationship).where(
+            WikiPageRelationship.source_page_id == source_page_id,
+            WikiPageRelationship.target_page_id == target_page_id,
+            WikiPageRelationship.relation_type == relation_type,
+        )
+    )
+
+
+def create_compilation_relationship(
+    db: Session,
+    unit: KnowledgeUnit,
+    target_page_id: int,
+    current_user: User,
+) -> WikiPageRelationship | None:
+    if unit.source_page_id is None or unit.source_page_id == target_page_id:
+        return None
+
+    relation_type = "related_to"
+    existing = get_existing_relationship(db, unit.source_page_id, target_page_id, relation_type)
+    if existing is not None:
+        return None
+
+    relationship = WikiPageRelationship(
+        source_page_id=unit.source_page_id,
+        target_page_id=target_page_id,
+        relation_type=relation_type,
+        description=f"Generated from knowledge unit: {unit.title}",
+        source_type="knowledge_compilation",
+        source_job_id=unit.job_id,
+        created_by_user_id=current_user.id,
+    )
+    db.add(relationship)
+    return relationship
 
 
 @router.post(
@@ -215,6 +258,26 @@ def apply_knowledge_unit(
     if payload.action == "apply":
         unit.apply_status = "applied"
         unit.created_page_id = payload.target_page_id
+        if payload.target_page_id is not None:
+            relationship = create_compilation_relationship(db, unit, payload.target_page_id, current_user)
+            if relationship is not None:
+                db.flush()
+                unit.job.relationship_count += 1
+                record_audit_log(
+                    db,
+                    action="wiki.relationship.create_from_knowledge_unit",
+                    actor=current_user,
+                    request=request,
+                    resource_type="wiki_page_relationship",
+                    resource_id=str(relationship.id),
+                    detail={
+                        "knowledge_unit_id": unit.id,
+                        "job_id": unit.job_id,
+                        "source_page_id": relationship.source_page_id,
+                        "target_page_id": relationship.target_page_id,
+                        "relation_type": relationship.relation_type,
+                    },
+                )
     elif payload.action == "skip":
         unit.apply_status = "skipped"
     else:
