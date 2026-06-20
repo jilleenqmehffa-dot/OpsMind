@@ -23,3 +23,11 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
 CHROMA_HOST = os.getenv("CHROMA_HOST", "127.0.0.1")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8001"))
 CHROMA_DOCUMENT_COLLECTION = os.getenv("CHROMA_DOCUMENT_COLLECTION", "opsmind_documents")
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "fake").strip().lower()
+LLM_MODEL = os.getenv("LLM_MODEL", "opsmind-fake").strip()
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip() or None
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip() or None
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.2"))
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "1200"))
