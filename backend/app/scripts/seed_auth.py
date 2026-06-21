@@ -38,6 +38,26 @@ PERMISSIONS = [
         "name": "修改系统配置",
         "description": "修改系统级配置项",
     },
+    {
+        "code": "incident:read",
+        "name": "查看故障案例",
+        "description": "查看故障案例和处理记录",
+    },
+    {
+        "code": "incident:create",
+        "name": "创建故障案例",
+        "description": "创建新的故障案例",
+    },
+    {
+        "code": "incident:update",
+        "name": "编辑故障案例",
+        "description": "编辑已有故障案例和处理记录",
+    },
+    {
+        "code": "incident:delete",
+        "name": "删除故障案例",
+        "description": "软删除故障案例",
+    },
 ]
 
 ROLES = [
@@ -52,6 +72,10 @@ ROLES = [
             "wiki:delete",
             "user:manage",
             "system:config",
+            "incident:read",
+            "incident:create",
+            "incident:update",
+            "incident:delete",
         ],
     },
     {
@@ -62,6 +86,9 @@ ROLES = [
             "wiki:read",
             "wiki:create",
             "wiki:update",
+            "incident:read",
+            "incident:create",
+            "incident:update",
         ],
     },
 ]
