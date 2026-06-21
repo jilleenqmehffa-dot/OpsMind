@@ -1,5 +1,6 @@
 from app.models.audit_log import AuditLog
 from app.models.document_index_job import DocumentIndexJob
+from app.models.incident_case import IncidentCase
 from app.models.knowledge_compilation_job import KnowledgeCompilationJob
 from app.models.knowledge_unit import KnowledgeUnit
 from app.models.permission import Permission
@@ -18,6 +19,7 @@ from app.models.wiki_version import WikiVersion
 __all__ = [
     "AuditLog",
     "DocumentIndexJob",
+    "IncidentCase",
     "KnowledgeCompilationJob",
     "KnowledgeUnit",
     "Permission",
