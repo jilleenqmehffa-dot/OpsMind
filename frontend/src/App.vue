@@ -17,6 +17,7 @@ import {
 } from "@element-plus/icons-vue";
 import { getCurrentUser, login, type CurrentUser } from "./api/auth";
 import { getHealth } from "./api/health";
+import IncidentWorkspace from "./components/IncidentWorkspace.vue";
 import {
   compileAttachment,
   createAttachment,
@@ -51,7 +52,7 @@ import {
 } from "./api/wiki";
 
 type HealthState = "loading" | "online" | "offline";
-type ViewKey = "overview" | "wiki" | "search";
+type ViewKey = "overview" | "wiki" | "incidents" | "search";
 
 const tokenStorageKey = "opsmind.access_token";
 
@@ -607,6 +608,12 @@ async function openSearchResult(pageId: number) {
   await selectPage(pageId);
 }
 
+async function openIncidentWiki(pageId: number) {
+  activeView.value = "wiki";
+  await loadWikiData();
+  await selectPage(pageId);
+}
+
 async function selectView(view: ViewKey) {
   if (!currentUser.value) {
     activeView.value = "overview";
@@ -652,20 +659,36 @@ onMounted(() => {
           <el-icon><Document /></el-icon>
           <span>知识库</span>
         </el-menu-item>
+        <el-menu-item index="incidents" :disabled="!currentUser">
+          <el-icon><Connection /></el-icon>
+          <span>故障案例</span>
+        </el-menu-item>
         <el-menu-item index="search" :disabled="!currentUser">
           <el-icon><Search /></el-icon>
           <span>智能检索</span>
         </el-menu-item>
       </el-menu>
 
-      <div class="sidebar-footer">M2 Wiki 与文档</div>
+      <div class="sidebar-footer">M7 故障案例知识化</div>
     </el-aside>
 
     <el-container>
       <el-header class="topbar">
         <div>
           <p class="eyebrow">OPS KNOWLEDGE CENTER</p>
-          <h1>{{ activeView === "wiki" ? "Wiki 与文档管理" : currentUser ? "系统工作台" : "登录 OpsMind" }}</h1>
+          <h1>
+            {{
+              activeView === "wiki"
+                ? "Wiki 与文档管理"
+                : activeView === "incidents"
+                  ? "故障案例知识化"
+                  : activeView === "search"
+                    ? "Wiki 智能检索"
+                    : currentUser
+                      ? "系统工作台"
+                      : "登录 OpsMind"
+            }}
+          </h1>
         </div>
         <div class="topbar-actions">
           <el-tag effect="plain" type="info">本地开发</el-tag>
@@ -1001,6 +1024,13 @@ onMounted(() => {
               </div>
             </section>
           </section>
+
+          <IncidentWorkspace
+            v-else-if="activeView === 'incidents'"
+            :can-delete="canDeleteWiki"
+            :token="accessToken"
+            @open-wiki="openIncidentWiki"
+          />
 
           <section v-else class="search-workspace">
             <el-card class="search-panel" shadow="never">
