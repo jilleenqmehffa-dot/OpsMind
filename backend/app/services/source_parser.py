@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import re
 
-from app.core.config import PROJECT_ROOT
+from app.core.config import PROJECT_ROOT, UPLOAD_STORAGE_DIR
 
 
 SUPPORTED_SOURCE_EXTENSIONS = {
@@ -23,6 +23,10 @@ class UnsupportedSourceType(SourceParseError):
 
 class SourceReadError(SourceParseError):
     """Raised when a source attachment cannot be read."""
+
+
+class SourcePathNotAllowed(SourceParseError):
+    """Raised when an attachment path escapes the configured upload directory."""
 
 
 @dataclass(slots=True)
@@ -56,7 +60,11 @@ def resolve_source_path(storage_path: str) -> Path:
     path = Path(storage_path)
     if not path.is_absolute():
         path = PROJECT_ROOT / path
-    return path
+    resolved_path = path.resolve()
+    allowed_root = UPLOAD_STORAGE_DIR.resolve()
+    if not resolved_path.is_relative_to(allowed_root):
+        raise SourcePathNotAllowed("Source path is outside the configured upload directory")
+    return resolved_path
 
 
 def parse_source_document(

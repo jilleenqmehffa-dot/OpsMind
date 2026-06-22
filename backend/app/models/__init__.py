@@ -6,6 +6,7 @@ from app.models.knowledge_unit import KnowledgeUnit
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
+from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.models.wiki_attachment import WikiAttachment
@@ -25,6 +26,7 @@ __all__ = [
     "Permission",
     "Role",
     "RolePermission",
+    "ToolInvocation",
     "User",
     "UserRole",
     "WikiAttachment",
