@@ -105,3 +105,12 @@ class IncidentCaseResponse(IncidentCaseListItem):
     review_conclusion: str | None
     created_by_user_id: int | None
     updated_by_user_id: int | None
+
+
+class IncidentRelationshipBuildResponse(BaseModel):
+    incident_id: int
+    wiki_page_id: int
+    created_page_ids: list[int]
+    updated_page_ids: list[int]
+    relationship_ids: list[int]
+    similar_incident_ids: list[int]

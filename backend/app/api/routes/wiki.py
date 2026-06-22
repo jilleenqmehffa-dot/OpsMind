@@ -145,6 +145,7 @@ def page_response(page: WikiPage) -> WikiPageResponse:
         title=page.title,
         slug=page.slug,
         content=page.content,
+        page_type=page.page_type,
         status=page.status,
         category_id=page.category_id,
         author_user_id=page.author_user_id,
@@ -180,6 +181,7 @@ def search_result(
         id=page.id,
         title=page.title,
         slug=page.slug,
+        page_type=page.page_type,
         status=page.status,
         summary=build_search_summary(page.content, keyword),
         category_id=page.category_id,
@@ -339,6 +341,7 @@ def create_page(
         title=payload.title,
         slug=payload.slug,
         content=payload.content,
+        page_type=payload.page_type,
         status=payload.status,
         category_id=payload.category_id,
         author_user_id=current_user.id,
@@ -356,6 +359,7 @@ def create_page(
 @router.get("/pages", response_model=list[WikiPageListItem])
 def list_pages(
     q: str | None = Query(default=None, max_length=100),
+    page_type: str | None = Query(default=None, pattern="^(concept|system|process|rule|term|event|incident)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("wiki:read")),
 ) -> list[WikiPage]:
@@ -363,12 +367,15 @@ def list_pages(
     if q:
         like = f"%{q}%"
         query = query.where(or_(WikiPage.title.ilike(like), WikiPage.content.ilike(like)))
+    if page_type is not None:
+        query = query.where(WikiPage.page_type == page_type)
     return list(db.scalars(query.order_by(desc(WikiPage.updated_at))).all())
 
 
 @router.get("/search", response_model=list[WikiSearchResult])
 def search_pages(
     q: str = Query(min_length=1, max_length=100),
+    page_type: str | None = Query(default=None, pattern="^(concept|system|process|rule|term|event|incident)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(draft|published|archived)$"),
     category_id: int | None = Query(default=None, ge=1),
     tag_id: int | None = Query(default=None, ge=1),
@@ -388,6 +395,8 @@ def search_pages(
     title_match = WikiPage.title.ilike(like)
     content_match = WikiPage.content.ilike(like)
     query = select(WikiPage).where(WikiPage.deleted_at.is_(None), or_(title_match, content_match))
+    if page_type is not None:
+        query = query.where(WikiPage.page_type == page_type)
     if status_filter is not None:
         query = query.where(WikiPage.status == status_filter)
     if category_id is not None:
@@ -433,6 +442,8 @@ def update_page(
         page.title = payload.title
     if payload.content is not None:
         page.content = payload.content
+    if payload.page_type is not None:
+        page.page_type = payload.page_type
     if payload.status is not None:
         page.status = payload.status
     if payload.tag_ids is not None:

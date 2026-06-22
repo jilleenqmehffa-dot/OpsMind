@@ -7,8 +7,17 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_permission
 from app.models.incident_case import IncidentCase
 from app.models.user import User
-from app.schemas.incident_case import IncidentCaseCreate, IncidentCaseListItem, IncidentCaseResponse, IncidentCaseUpdate
+from app.schemas.incident_case import (
+    IncidentCaseCreate,
+    IncidentCaseListItem,
+    IncidentCaseResponse,
+    IncidentCaseUpdate,
+    IncidentRelationshipBuildResponse,
+)
+from app.schemas.wiki import WikiPageResponse
 from app.services.audit import record_audit_log
+from app.services.incident_wiki import IncidentWikiConflictError, publish_incident_to_wiki
+from app.services.incident_relationships import IncidentRelationshipConflictError, build_incident_relationships
 
 
 router = APIRouter(prefix="/api/v1/incidents", tags=["incidents"])
@@ -132,6 +141,114 @@ def read_incident(
     current_user: User = Depends(require_permission("incident:read")),
 ) -> IncidentCase:
     return get_incident_or_404(db, incident_id)
+
+
+@router.post(
+    "/{incident_id}/publish-to-wiki",
+    response_model=WikiPageResponse,
+    dependencies=[
+        Depends(require_permission("wiki:create")),
+        Depends(require_permission("wiki:update")),
+    ],
+)
+def publish_incident(
+    incident_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("incident:update")),
+) -> WikiPageResponse:
+    incident = db.scalar(
+        select(IncidentCase)
+        .where(IncidentCase.id == incident_id, IncidentCase.deleted_at.is_(None))
+        .with_for_update()
+    )
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident case not found")
+
+    try:
+        page, publish_action = publish_incident_to_wiki(db, incident, current_user)
+    except IncidentWikiConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    db.flush()
+    record_audit_log(
+        db,
+        action="incident.case.publish_to_wiki",
+        actor=current_user,
+        request=request,
+        resource_type="incident_case",
+        resource_id=str(incident.id),
+        detail={"wiki_page_id": page.id, "publish_action": publish_action},
+    )
+    db.commit()
+    db.refresh(page)
+    return WikiPageResponse(
+        id=page.id,
+        title=page.title,
+        slug=page.slug,
+        content=page.content,
+        page_type=page.page_type,
+        status=page.status,
+        category_id=page.category_id,
+        author_user_id=page.author_user_id,
+        created_at=page.created_at,
+        updated_at=page.updated_at,
+        tag_ids=[item.tag_id for item in page.tags],
+    )
+
+
+@router.post(
+    "/{incident_id}/build-wiki-relationships",
+    response_model=IncidentRelationshipBuildResponse,
+    dependencies=[
+        Depends(require_permission("wiki:create")),
+        Depends(require_permission("wiki:update")),
+    ],
+)
+def build_incident_wiki_relationships(
+    incident_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("incident:update")),
+) -> IncidentRelationshipBuildResponse:
+    incident = db.scalar(
+        select(IncidentCase)
+        .where(IncidentCase.id == incident_id, IncidentCase.deleted_at.is_(None))
+        .with_for_update()
+    )
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident case not found")
+
+    try:
+        result = build_incident_relationships(db, incident, current_user)
+    except IncidentRelationshipConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    db.flush()
+    record_audit_log(
+        db,
+        action="incident.case.build_wiki_relationships",
+        actor=current_user,
+        request=request,
+        resource_type="incident_case",
+        resource_id=str(incident.id),
+        detail={
+            "wiki_page_id": result.wiki_page_id,
+            "created_page_count": len(result.created_page_ids),
+            "updated_page_count": len(result.updated_page_ids),
+            "relationship_count": len(result.relationship_ids),
+            "similar_incident_count": len(result.similar_incident_ids),
+        },
+    )
+    db.commit()
+    return IncidentRelationshipBuildResponse(
+        incident_id=result.incident_id,
+        wiki_page_id=result.wiki_page_id,
+        created_page_ids=result.created_page_ids,
+        updated_page_ids=result.updated_page_ids,
+        relationship_ids=result.relationship_ids,
+        similar_incident_ids=result.similar_incident_ids,
+    )
 
 
 @router.put("/{incident_id}", response_model=IncidentCaseResponse)

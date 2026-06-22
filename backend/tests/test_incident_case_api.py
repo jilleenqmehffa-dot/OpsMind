@@ -47,7 +47,11 @@ def make_request() -> Request:
 def permission_code(dependency: object) -> str | None:
     closure = getattr(dependency, "__closure__", None) or ()
     return next(
-        (cell.cell_contents for cell in closure if isinstance(cell.cell_contents, str) and cell.cell_contents.startswith("incident:")),
+        (
+            cell.cell_contents
+            for cell in closure
+            if isinstance(cell.cell_contents, str) and cell.cell_contents.startswith(("incident:", "wiki:"))
+        ),
         None,
     )
 
@@ -63,6 +67,8 @@ def test_incident_routes_are_registered_with_expected_permissions() -> None:
         ("/api/v1/incidents", "POST"): "incident:create",
         ("/api/v1/incidents", "GET"): "incident:read",
         ("/api/v1/incidents/{incident_id}", "GET"): "incident:read",
+        ("/api/v1/incidents/{incident_id}/publish-to-wiki", "POST"): "incident:update",
+        ("/api/v1/incidents/{incident_id}/build-wiki-relationships", "POST"): "incident:update",
         ("/api/v1/incidents/{incident_id}", "PUT"): "incident:update",
         ("/api/v1/incidents/{incident_id}", "DELETE"): "incident:delete",
     }
@@ -71,6 +77,18 @@ def test_incident_routes_are_registered_with_expected_permissions() -> None:
         assert code in {permission_code(item.call) for item in routes[key].dependant.dependencies}
 
     assert routes[("/api/v1/incidents", "POST")].response_model is IncidentCaseResponse
+    publish_route = routes[("/api/v1/incidents/{incident_id}/publish-to-wiki", "POST")]
+    assert {
+        permission_code(item.call)
+        for item in publish_route.dependant.dependencies
+        if permission_code(item.call) is not None
+    } == {"incident:update", "wiki:create", "wiki:update"}
+    relationship_route = routes[("/api/v1/incidents/{incident_id}/build-wiki-relationships", "POST")]
+    assert {
+        permission_code(item.call)
+        for item in relationship_route.dependant.dependencies
+        if permission_code(item.call) is not None
+    } == {"incident:update", "wiki:create", "wiki:update"}
 
 
 def test_incident_crud_uses_soft_delete_and_records_audit(monkeypatch) -> None:

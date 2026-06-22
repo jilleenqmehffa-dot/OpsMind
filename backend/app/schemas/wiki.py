@@ -1,6 +1,10 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+WikiPageType = Literal["concept", "system", "process", "rule", "term", "event", "incident"]
 
 
 class CategoryCreate(BaseModel):
@@ -37,6 +41,7 @@ class WikiPageCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     slug: str = Field(min_length=1, max_length=220)
     content: str = Field(min_length=1)
+    page_type: WikiPageType = "concept"
     status: str = Field(default="draft", pattern="^(draft|published|archived)$")
     category_id: int | None = None
     tag_ids: list[int] = Field(default_factory=list)
@@ -46,6 +51,7 @@ class WikiPageUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     slug: str | None = Field(default=None, min_length=1, max_length=220)
     content: str | None = Field(default=None, min_length=1)
+    page_type: WikiPageType | None = None
     status: str | None = Field(default=None, pattern="^(draft|published|archived)$")
     category_id: int | None = None
     tag_ids: list[int] | None = None
@@ -57,6 +63,7 @@ class WikiPageListItem(BaseModel):
     id: int
     title: str
     slug: str
+    page_type: WikiPageType
     status: str
     category_id: int | None
     author_user_id: int | None
@@ -86,6 +93,7 @@ class WikiSearchResult(BaseModel):
     id: int
     title: str
     slug: str
+    page_type: WikiPageType
     status: str
     summary: str
     category_id: int | None
