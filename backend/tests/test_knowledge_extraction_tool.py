@@ -106,6 +106,7 @@ def test_knowledge_extraction_tool_validates_limits_and_is_registered() -> None:
         "page_relationship",
         "source_parse",
         "wiki_page_update",
+        "wiki_search",
     )
 
     with make_session() as db:

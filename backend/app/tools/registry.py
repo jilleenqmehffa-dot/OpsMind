@@ -25,10 +25,12 @@ def build_default_tool_registry() -> ToolRegistry:
     from app.tools.page_relationship import PageRelationshipTool
     from app.tools.source_parse import SourceParseTool
     from app.tools.wiki_page_update import WikiPageUpdateTool
+    from app.tools.wiki_search import WikiSearchTool
 
     registry = ToolRegistry()
     registry.register(SourceParseTool())
     registry.register(KnowledgeExtractionTool())
     registry.register(WikiPageUpdateTool())
     registry.register(PageRelationshipTool())
+    registry.register(WikiSearchTool())
     return registry
