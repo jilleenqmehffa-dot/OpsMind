@@ -22,6 +22,12 @@ Agent 默认只暴露 `source_parse`、`knowledge_extraction` 和 `wiki_search` 
 
 工具结果会被序列化并限制长度，系统提示明确把结果标记为不可信数据。工具失败时只向模型反馈工具名和稳定错误码，不传递异常堆栈。每次真实工具调用仍由统一执行器写入成功或失败审计。
 
+### Knowledge Agent API 为什么只做边界编排？
+
+`POST /api/v1/knowledge-agent/runs` 只负责认证当前用户、构造 `LLMProvider`、传入 `ToolContext`、校验本次开放的写工具和映射错误码。真正的工具选择循环仍在 `run_knowledge_agent` 中，真实工具调用仍统一走 `execute_tool`。
+
+这样 API 层不会复制工具权限、事务审计和结果摘要逻辑。调用者可以通过 `max_steps` 和 `max_observation_chars` 控制单次运行边界，但不能绕过工具注册表，也不能开放未列入白名单的写工具。常见排查方式是先看接口返回的稳定错误码，再查 `tool_invocations` 表中的每次工具调用记录。
+
 ## M8 Wiki 搜索工具
 
 ### Wiki Search Tool 为什么返回摘要而不是完整页面正文？

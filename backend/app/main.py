@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.incident_cases import router as incident_cases_router
+from app.api.routes.knowledge_agent import router as knowledge_agent_router
 from app.api.routes.knowledge_compilation import router as knowledge_compilation_router
 from app.api.routes.security import router as security_router
 from app.api.routes.wiki import router as wiki_router
@@ -17,6 +18,7 @@ app.include_router(wiki_router)
 app.include_router(wiki_index_router)
 app.include_router(wiki_qa_router)
 app.include_router(knowledge_compilation_router)
+app.include_router(knowledge_agent_router)
 
 
 @app.get("/api/v1/health")
