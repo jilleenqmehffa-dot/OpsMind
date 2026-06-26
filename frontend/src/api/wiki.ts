@@ -99,6 +99,28 @@ export interface WikiSearchParams {
   limit?: number;
 }
 
+export interface WikiQuestionCitation {
+  page_id: number;
+  title: string;
+  slug: string;
+}
+
+export interface WikiAnswerMetadata {
+  provider: string;
+  model: string;
+  duration_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+export interface WikiAnswerResponse {
+  answer: string;
+  citations: WikiQuestionCitation[];
+  insufficient_knowledge: boolean;
+  metadata: WikiAnswerMetadata;
+}
+
 export interface KnowledgeCompilationJob {
   id: number;
   page_id: number | null;
@@ -247,6 +269,19 @@ export async function searchWikiPages(token: string, params: WikiSearchParams): 
     headers: authHeaders(token),
     params,
   });
+  return response.data;
+}
+
+export async function askWikiQuestion(
+  token: string,
+  question: string,
+  pageIds: number[] = [],
+): Promise<WikiAnswerResponse> {
+  const response = await axios.post<WikiAnswerResponse>(
+    "/api/v1/wiki/questions",
+    { question, page_ids: pageIds },
+    { headers: authHeaders(token) },
+  );
   return response.data;
 }
 

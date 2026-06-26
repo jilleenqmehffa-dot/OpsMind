@@ -6,6 +6,12 @@
 
 ## M8 Knowledge Agent 编排
 
+### 前端如何接入基于 Wiki 的可追溯问答？
+
+前端通过 `POST /api/v1/wiki/questions` 提交问题和可选的 `page_ids`，后端返回答案、引用 Wiki 页面和模型元数据。OpsMind 在 `frontend/src/api/wiki.ts` 中定义 `WikiAnswerResponse`、`WikiQuestionCitation` 和 `askWikiQuestion`，页面层只处理表单状态、加载状态、引用跳转和错误提示。
+
+这种拆分让问答页面不直接拼接后端 URL 或解析响应细节。常见风险是前端只展示答案而忽略引用来源；项目中把 `citations` 渲染为可点击页面，用户可以从回答跳回具体 Wiki 页面核对依据。
+
 ### OpsMind 的首期 ReAct Agent 为什么没有直接使用 LangChain Agent？
 
 当前统一 `LLMProvider` 只提供标准文本生成接口，OpenAI 兼容实现也没有暴露原生 `tool_calls`。仓库仅安装了 `langchain-text-splitters`，没有完整 LangChain Agent 依赖。

@@ -661,6 +661,91 @@ code {
   padding: 40px 0;
 }
 
+.qa-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.qa-panel,
+.qa-answer-panel {
+  border: 1px solid #dfe9eb;
+  border-radius: 8px;
+}
+
+.qa-form {
+  display: grid;
+  gap: 4px;
+}
+
+.qa-form .el-select,
+.qa-form .el-button {
+  width: 100%;
+}
+
+.qa-answer-body {
+  display: grid;
+  gap: 16px;
+  min-height: 280px;
+}
+
+.qa-answer-text {
+  margin: 0;
+  color: #183943;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.qa-citations {
+  display: grid;
+  gap: 8px;
+}
+
+.citation-row {
+  display: grid;
+  width: 100%;
+  gap: 4px;
+  padding: 10px 12px;
+  color: #36535b;
+  text-align: left;
+  border: 1px solid #e2ecef;
+  border-radius: 8px;
+  background: #f8fbfc;
+  cursor: pointer;
+}
+
+.citation-row:hover {
+  border-color: #69b8b4;
+  background: #eef8f7;
+}
+
+.citation-row strong,
+.citation-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.citation-row span,
+.qa-metadata {
+  color: #789098;
+  font-size: 12px;
+}
+
+.qa-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding-top: 12px;
+  border-top: 1px solid #edf2f4;
+}
+
+.qa-empty {
+  align-self: center;
+  justify-self: center;
+}
+
 @media (max-width: 820px) {
   .sidebar {
     width: 72px !important;
@@ -701,6 +786,7 @@ code {
   .dashboard-grid,
   .wiki-workspace,
   .wiki-side-panels,
+  .qa-workspace,
   .search-form {
     grid-template-columns: 1fr;
   }

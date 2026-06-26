@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
+  ChatLineRound,
   Connection,
   DataAnalysis,
   Delete,
@@ -19,6 +20,7 @@ import { getCurrentUser, login, type CurrentUser } from "./api/auth";
 import { getHealth } from "./api/health";
 import IncidentWorkspace from "./components/IncidentWorkspace.vue";
 import {
+  askWikiQuestion,
   compileAttachment,
   createAttachment,
   createCategory,
@@ -42,6 +44,7 @@ import {
   type KnowledgeCompilationJob,
   type KnowledgeUnit,
   type WikiAttachment,
+  type WikiAnswerResponse,
   type WikiCategory,
   type WikiPage,
   type WikiPageListItem,
@@ -52,7 +55,7 @@ import {
 } from "./api/wiki";
 
 type HealthState = "loading" | "online" | "offline";
-type ViewKey = "overview" | "wiki" | "incidents" | "search";
+type ViewKey = "overview" | "wiki" | "incidents" | "search" | "qa";
 
 const tokenStorageKey = "opsmind.access_token";
 
@@ -82,6 +85,8 @@ const compilationLoading = ref(false);
 const relationshipSaving = ref(false);
 const searchLoading = ref(false);
 const searchResults = ref<WikiSearchResult[]>([]);
+const qaLoading = ref(false);
+const qaAnswer = ref<WikiAnswerResponse | null>(null);
 
 const loginForm = reactive({
   username: "admin",
@@ -127,6 +132,11 @@ const searchForm = reactive({
   status: "",
   category_id: null as number | null,
   tag_id: null as number | null,
+});
+
+const qaForm = reactive({
+  question: "",
+  page_ids: [] as number[],
 });
 
 const relationTypeOptions = [
@@ -313,6 +323,7 @@ function logout() {
   pages.value = [];
   selectedPage.value = null;
   relationships.value = [];
+  qaAnswer.value = null;
   resetPageForm();
   resetRelationshipForm();
 }
@@ -350,6 +361,15 @@ async function loadSearchFilters() {
     tags.value = tagData;
   } catch {
     ElMessage.error("加载搜索筛选项失败");
+  }
+}
+
+async function loadQaPages() {
+  if (!accessToken.value) return;
+  try {
+    pages.value = await listPages(accessToken.value);
+  } catch {
+    ElMessage.error("加载问答上下文页面失败");
   }
 }
 
@@ -596,6 +616,30 @@ async function runSearch() {
   }
 }
 
+async function submitQuestion() {
+  if (!accessToken.value) return;
+  const question = qaForm.question.trim();
+  if (!question) {
+    ElMessage.warning("请输入问题");
+    return;
+  }
+
+  qaLoading.value = true;
+  try {
+    qaAnswer.value = await askWikiQuestion(accessToken.value, question, qaForm.page_ids);
+  } catch {
+    ElMessage.error("问答生成失败，请确认 Wiki 中已有相关知识页面");
+  } finally {
+    qaLoading.value = false;
+  }
+}
+
+function clearQuestion() {
+  qaForm.question = "";
+  qaForm.page_ids = [];
+  qaAnswer.value = null;
+}
+
 function resetSearchFilters() {
   searchForm.status = "";
   searchForm.category_id = null;
@@ -603,6 +647,12 @@ function resetSearchFilters() {
 }
 
 async function openSearchResult(pageId: number) {
+  activeView.value = "wiki";
+  await loadWikiData();
+  await selectPage(pageId);
+}
+
+async function openCitation(pageId: number) {
   activeView.value = "wiki";
   await loadWikiData();
   await selectPage(pageId);
@@ -626,6 +676,8 @@ async function selectView(view: ViewKey) {
     await loadWikiData();
   } else if (view === "search") {
     await loadSearchFilters();
+  } else if (view === "qa") {
+    await loadQaPages();
   }
 }
 
@@ -667,9 +719,13 @@ onMounted(() => {
           <el-icon><Search /></el-icon>
           <span>智能检索</span>
         </el-menu-item>
+        <el-menu-item index="qa" :disabled="!currentUser">
+          <el-icon><ChatLineRound /></el-icon>
+          <span>Wiki 问答</span>
+        </el-menu-item>
       </el-menu>
 
-      <div class="sidebar-footer">M7 故障案例知识化</div>
+      <div class="sidebar-footer">M6 Wiki 问答</div>
     </el-aside>
 
     <el-container>
@@ -682,8 +738,10 @@ onMounted(() => {
                 ? "Wiki 与文档管理"
                 : activeView === "incidents"
                   ? "故障案例知识化"
-                  : activeView === "search"
-                    ? "Wiki 智能检索"
+                : activeView === "search"
+                  ? "Wiki 智能检索"
+                  : activeView === "qa"
+                    ? "基于 Wiki 的 AI 问答"
                     : currentUser
                       ? "系统工作台"
                       : "登录 OpsMind"
@@ -1031,6 +1089,81 @@ onMounted(() => {
             :token="accessToken"
             @open-wiki="openIncidentWiki"
           />
+
+          <section v-else-if="activeView === 'qa'" class="qa-workspace">
+            <el-card class="qa-panel" shadow="never">
+              <template #header>
+                <div class="card-header">
+                  <div class="card-title">
+                    <el-icon><ChatLineRound /></el-icon>
+                    <span>提问</span>
+                  </div>
+                  <el-button text @click="clearQuestion">清空</el-button>
+                </div>
+              </template>
+
+              <el-form class="qa-form" label-position="top">
+                <el-form-item label="问题">
+                  <el-input
+                    v-model="qaForm.question"
+                    :autosize="{ minRows: 6, maxRows: 12 }"
+                    maxlength="2000"
+                    show-word-limit
+                    type="textarea"
+                    @keyup.ctrl.enter="submitQuestion"
+                  />
+                </el-form-item>
+
+                <el-form-item label="限定页面">
+                  <el-select v-model="qaForm.page_ids" clearable filterable multiple>
+                    <el-option v-for="page in pages" :key="page.id" :label="page.title" :value="page.id" />
+                  </el-select>
+                </el-form-item>
+
+                <el-button :loading="qaLoading" type="primary" @click="submitQuestion">生成回答</el-button>
+              </el-form>
+            </el-card>
+
+            <el-card class="qa-answer-panel" shadow="never">
+              <template #header>
+                <div class="card-header">
+                  <div class="card-title">
+                    <el-icon><Document /></el-icon>
+                    <span>回答</span>
+                  </div>
+                  <el-tag v-if="qaAnswer" :type="qaAnswer.insufficient_knowledge ? 'warning' : 'success'" effect="plain">
+                    {{ qaAnswer.insufficient_knowledge ? "知识不足" : "已生成" }}
+                  </el-tag>
+                </div>
+              </template>
+
+              <div v-loading="qaLoading" class="qa-answer-body">
+                <template v-if="qaAnswer">
+                  <p class="qa-answer-text">{{ qaAnswer.answer }}</p>
+
+                  <div v-if="qaAnswer.citations.length" class="qa-citations">
+                    <button
+                      v-for="citation in qaAnswer.citations"
+                      :key="citation.page_id"
+                      class="citation-row"
+                      type="button"
+                      @click="openCitation(citation.page_id)"
+                    >
+                      <strong>{{ citation.title }}</strong>
+                      <span>{{ citation.slug }}</span>
+                    </button>
+                  </div>
+
+                  <div class="qa-metadata">
+                    <span>{{ qaAnswer.metadata.provider }} / {{ qaAnswer.metadata.model }}</span>
+                    <span>{{ qaAnswer.metadata.duration_ms }} ms</span>
+                    <span>{{ qaAnswer.metadata.total_tokens }} tokens</span>
+                  </div>
+                </template>
+                <p v-else class="empty-text qa-empty">暂无回答</p>
+              </div>
+            </el-card>
+          </section>
 
           <section v-else class="search-workspace">
             <el-card class="search-panel" shadow="never">
