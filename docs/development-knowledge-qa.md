@@ -2,7 +2,39 @@
 
 本文档把 OpsMind 实际开发过程中的可复用知识整理成面试式问答。回答优先结合项目代码，不把尚未使用的技术描述成项目经验。
 
-当前内容已同步至 M8 Page Relationship Tool 阶段；后续开发任务按 `AGENTS.md` 规则持续增量更新。
+当前内容已同步至 M8 Knowledge Agent 工具编排阶段；后续开发任务按 `AGENTS.md` 规则持续增量更新。
+
+## M8 Knowledge Agent 编排
+
+### OpsMind 的首期 ReAct Agent 为什么没有直接使用 LangChain Agent？
+
+当前统一 `LLMProvider` 只提供标准文本生成接口，OpenAI 兼容实现也没有暴露原生 `tool_calls`。仓库仅安装了 `langchain-text-splitters`，没有完整 LangChain Agent 依赖。
+
+首期因此使用受约束 JSON 决策协议：模型每轮只能返回一个 `tool_call` 或 `final` 对象。编排器解析并校验决策后，通过现有 `ToolRegistry` 和 `execute_tool` 执行工具。这先验证了工具选择、观察反馈、事务审计和终止边界，同时避免为了一个循环立即扩大依赖和抽象层。
+
+这种实现不是自由文本的“Thought/Action/Observation”解析器，也不会保存或展示模型隐藏推理。后续接入支持原生函数调用的 Provider 或 LangChain 时，可以替换决策适配层，保留现有工具、权限和审计实现。
+
+### Knowledge Agent 如何限制写工具和无限循环？
+
+Agent 默认只暴露 `source_parse`、`knowledge_extraction` 和 `wiki_search` 三个只读工具。调用方必须在本次运行中按工具名显式传入 `allowed_write_tools`，才能开放 `wiki_page_update` 或 `page_relationship`；模型不能通过输出参数自行提高权限。写工具内部仍会再次校验操作者和业务权限。
+
+编排器限制最多 1 至 10 轮，默认 5 轮，并记录已经执行的“工具名 + 规范化参数”。完全相同的调用再次出现时立即以 `repeated_tool_call` 停止；达到轮数仍未返回最终答案时以 `step_limit_exceeded` 停止。
+
+工具结果会被序列化并限制长度，系统提示明确把结果标记为不可信数据。工具失败时只向模型反馈工具名和稳定错误码，不传递异常堆栈。每次真实工具调用仍由统一执行器写入成功或失败审计。
+
+## M8 Wiki 搜索工具
+
+### Wiki Search Tool 为什么返回摘要而不是完整页面正文？
+
+工具的职责是定位候选 Wiki 页面，而不是直接构建最终问答上下文。返回完整正文会快速占用 Agent 上下文，并可能让一次宽泛搜索读取大量不必要内容。
+
+OpsMind 的搜索结果只包含页面 ID、标题、Slug、页面类型、状态、限长摘要、标签和受限数量的直接关系。Agent 确认候选页面后，再由专门的上下文构建流程按页面和字符预算读取正文。工具调用审计只保存结果数量、页面 ID 和类型分布，不保存摘要或正文。
+
+### SQL `LIKE` 搜索为什么要转义 `%` 和 `_`？
+
+在 SQL `LIKE` 表达式中，`%` 表示任意长度字符，`_` 表示任意单个字符。如果直接把用户或模型输入拼入模式，查询 `%` 会匹配几乎所有页面，绕过关键词搜索的预期边界。
+
+Wiki Search Tool 会转义反斜杠、`%` 和 `_`，再使用显式 `escape` 字符执行 `ILIKE`。因此这些符号按普通文本匹配。查询仍通过 SQLAlchemy 参数绑定发送到数据库，不使用字符串拼接 SQL。
 
 ## M8 页面关系工具
 
